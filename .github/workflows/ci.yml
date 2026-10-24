@@ -51,6 +51,7 @@ jobs:
 
       - name: Smoke test the running server
         run: |
+          cp .env.example .env
           npx prisma db push --skip-generate
           npm run db:seed
           npm run start &
