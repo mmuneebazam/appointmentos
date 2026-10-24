@@ -1,0 +1,335 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────── design tokens ─────────────────────────── */
+@theme {
+  --color-ink: #0b1020;
+  --color-ink-soft: #151b2f;
+  --color-brand: #4f46e5;
+  --color-brand-dark: #4338ca;
+  --color-brand-soft: #eef2ff;
+  --color-accent: #0d9488;
+  --color-surface: #ffffff;
+  --color-canvas: #f6f7fb;
+  --color-line: #e6e8f0;
+  --color-muted: #6b7280;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: #111827;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+::selection {
+  background: #c7d2fe;
+  color: #111827;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─────────────────────────── primitives ─────────────────────────── */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.card-pad {
+  padding: 18px 20px;
+}
+
+.hairline {
+  border-top: 1px solid var(--color-line);
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.06s ease;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-brand);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-brand-dark);
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #111827;
+  border-color: var(--color-line);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #d5d8e3;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #374151;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.btn-danger {
+  background: #fff;
+  color: #b42318;
+  border-color: #fecdca;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #fef3f2;
+}
+
+.btn-dark {
+  background: var(--color-ink);
+  color: #fff;
+}
+.btn-dark:hover:not(:disabled) {
+  background: #1b2436;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  background: #fff;
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-size: 14px;
+  color: #111827;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.input::placeholder {
+  color: #9ca3af;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge-neutral {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #e5e7eb;
+}
+.badge-green {
+  background: #ecfdf3;
+  color: #067647;
+  border-color: #d1fadf;
+}
+.badge-amber {
+  background: #fffaeb;
+  color: #b54708;
+  border-color: #fedf89;
+}
+.badge-red {
+  background: #fef3f2;
+  color: #b42318;
+  border-color: #fecdca;
+}
+.badge-blue {
+  background: #eff8ff;
+  color: #175cd3;
+  border-color: #d1e9ff;
+}
+.badge-violet {
+  background: #f4f3ff;
+  color: #5925dc;
+  border-color: #e4e0ff;
+}
+
+.link {
+  color: var(--color-brand);
+  text-decoration: none;
+  font-weight: 500;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+/* Scrollbars that do not scream on light surfaces */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 999px;
+}
+
+/* ─────────────────────────── marketing surface ─────────────────────────── */
+.marketing {
+  background:
+    radial-gradient(1100px 520px at 12% -10%, rgba(99, 102, 241, 0.28), transparent 60%),
+    radial-gradient(900px 500px at 92% 0%, rgba(13, 148, 136, 0.2), transparent 55%),
+    #070b18;
+  color: #e5e7eb;
+}
+
+/* The grid is a background layer, NOT a mask on the content. Masking the
+   wrapper would fade out the text and cards along with the grid. */
+.marketing-grid {
+  position: relative;
+}
+
+.marketing-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 85% 55% at 50% 0%, #000 35%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 55% at 50% 0%, #000 35%, transparent 100%);
+}
+
+.marketing-grid > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.marketing h1,
+.marketing h2,
+.marketing h3 {
+  letter-spacing: -0.02em;
+}
+
+/* ─────────────────────────── animations ─────────────────────────── */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .pulse-soft {
+    animation: none;
+  }
+}
+
+/* Print-friendly invoice-ish blocks */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

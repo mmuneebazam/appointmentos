@@ -1,0 +1,51 @@
+# Local production-like stack.
+#
+#   docker compose up --build
+#   docker compose run --rm migrate     # first run: create schema + seed
+#
+# The worker runs as its own service, exactly as it would in production, and
+# shares the database volume with the web app.
+services:
+  web:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: 'file:/data/appointmentos.db?connection_limit=1'
+      SESSION_SECRET: 'change-me-in-real-deployments-32chars'
+      MOCK_WEBHOOK_SECRET: 'whsec_local_dev'
+      NOTIFY_TRANSPORT: 'console'
+      CALENDAR_PROVIDER: 'fake'
+      APP_URL: 'http://localhost:3000'
+    volumes:
+      - db:/data
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ['npx', 'tsx', 'src/worker/index.ts']
+    environment:
+      DATABASE_URL: 'file:/data/appointmentos.db?connection_limit=1'
+      SESSION_SECRET: 'change-me-in-real-deployments-32chars'
+      MOCK_WEBHOOK_SECRET: 'whsec_local_dev'
+      NOTIFY_TRANSPORT: 'console'
+      CALENDAR_PROVIDER: 'fake'
+    volumes:
+      - db:/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  # One-shot: create the schema and load the demo data.
+  migrate:
+    build: .
+    command: ['sh', '-c', 'npx prisma db push --skip-generate && npx tsx prisma/seed.ts']
+    environment:
+      DATABASE_URL: 'file:/data/appointmentos.db?connection_limit=1'
+      SESSION_SECRET: 'change-me-in-real-deployments-32chars'
+    volumes:
+      - db:/data
+    profiles: ['tools']
+
+volumes:
+  db:

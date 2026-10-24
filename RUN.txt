@@ -1,0 +1,31 @@
+AppointmentOS — how to run
+==========================
+
+Requirements: Node.js 20+
+
+1)  npm install
+2)  cp .env.example .env        (Windows: copy .env.example .env)
+3)  npm run db:push             create the local database
+4)  npm run db:seed             load demo data (48 appointments, 2 tenants)
+5)  npm run dev                 open http://localhost:3000
+
+Optional, in a second terminal:
+    npm run worker              runs reminders, calendar sync and refunds
+
+Demo logins (password for all: demo1234)
+    owner@northside.test        owner — full access
+    manager@northside.test      admin
+    jonas@northside.test        staff — tries to cancel to see a 403
+    barber@riverside.test       a different tenant (isolation demo)
+
+Customer booking page (no login):  http://localhost:3000/book/northside
+
+No API keys needed. Payments run on a local mock provider that emits
+genuinely signed webhooks, so every failure path is demoable offline.
+
+Tests:      npm test          (47 cases)
+Type check: npm run typecheck
+Smoke test: ./scripts/smoke.sh  (server must be running)
+
+NOTE: after `npm run db:reset`, restart `npm run dev` — SQLite holds a
+handle to the file that was replaced.

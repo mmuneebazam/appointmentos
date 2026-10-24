@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Type-check, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DATABASE_URL: 'file:./ci.db?connection_limit=1'
+      SESSION_SECRET: 'ci-session-secret-at-least-24-characters'
+      MOCK_WEBHOOK_SECRET: 'whsec_ci'
+      NOTIFY_TRANSPORT: 'console'
+      APP_URL: 'http://localhost:3000'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Fails the build if the committed schema drifts from what the code expects.
+      - name: Validate schema
+        run: npx prisma validate
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit + integration tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Smoke test the running server
+        run: |
+          npx prisma db push --skip-generate
+          npm run db:seed
+          npm run start &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+          ./scripts/smoke.sh

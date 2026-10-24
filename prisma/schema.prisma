@@ -1,0 +1,511 @@
+// AppointmentOS — data model
+//
+// NOTE ON PROVIDER: this demo runs on SQLite so it can boot anywhere with zero
+// infrastructure. The schema is written to be Postgres-portable:
+//   * no SQLite-only types, all money is Int minor units (never Float)
+//   * enums are modelled as String + a const union in src/lib/domain.ts
+//     (swap to native Prisma enums when moving to Postgres)
+//   * see docs/adr/0002-postgres-in-production.md for the production delta
+//     (SERIALIZABLE tx + EXCLUDE constraint on the slot lock table)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── identity ─────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+
+  memberships Membership[]
+  staff       Staff[]
+}
+
+model Organization {
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String   @unique
+  timezone              String   @default("UTC")
+  currency              String   @default("USD")
+  brandColor            String   @default("#4f46e5")
+  cancellationWindowHrs Int      @default(24)
+  depositRequired       Boolean  @default(true)
+  slotHoldMinutes       Int      @default(10)
+  createdAt             DateTime @default(now())
+
+  memberships Membership[]
+  locations   Location[]
+  staff       Staff[]
+  services    Service[]
+  resources   Resource[]
+  customers   Customer[]
+  appointments Appointment[]
+  payments    Payment[]
+  notifications Notification[]
+  auditLogs   AuditLog[]
+  jobs        Job[]
+  externalAccounts ExternalAccount[]
+  refunds     Refund[]
+  webhooks    WebhookEvent[]
+  slotHolds   SlotHold[]
+}
+
+model Membership {
+  id     String @id @default(cuid())
+  orgId  String
+  userId String
+  role   String @default("STAFF") // OWNER | ADMIN | STAFF
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([userId])
+}
+
+// ───────────────────────────── catalogue ─────────────────────────────
+
+model Location {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  timezone  String
+  address   String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  org           Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  staff         Staff[]
+  workingHours  WorkingHours[]
+  appointments  Appointment[]
+  resources     Resource[]
+  slotHolds     SlotHold[]
+
+  @@index([orgId])
+}
+
+model Service {
+  id              String  @id @default(cuid())
+  orgId           String
+  name            String
+  description     String?
+  durationMin     Int
+  bufferBeforeMin Int     @default(0)
+  bufferAfterMin  Int     @default(0)
+  priceCents      Int
+  depositCents    Int     @default(0)
+  isGroup         Boolean @default(false)
+  maxParticipants Int     @default(1)
+  active          Boolean @default(true)
+  createdAt       DateTime @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  staffLinks  StaffService[]
+  appointments Appointment[]
+  slotHolds   SlotHold[]
+
+  @@index([orgId])
+}
+
+model Staff {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String?
+  locationId String?
+  name      String
+  title     String?
+  email     String?
+  color     String   @default("#6366f1")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  org            Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user           User?              @relation(fields: [userId], references: [id])
+  location       Location?          @relation(fields: [locationId], references: [id])
+  services       StaffService[]
+  workingHours   WorkingHours[]
+  exceptions     ScheduleException[]
+  appointments   Appointment[]
+  slotHolds      SlotHold[]
+  slotLocks      SlotLock[]
+
+  @@index([orgId])
+}
+
+model StaffService {
+  id        String @id @default(cuid())
+  staffId   String
+  serviceId String
+  staff     Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, serviceId])
+}
+
+model Resource {
+  id         String  @id @default(cuid())
+  orgId      String
+  locationId String
+  name       String
+  kind       String  @default("ROOM") // ROOM | CHAIR | EQUIPMENT
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  location   Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([orgId])
+}
+
+/// Recurring weekly availability. Times are minutes from local midnight so that
+/// recurring rules follow the *local* wall clock across DST transitions.
+model WorkingHours {
+  id         String @id @default(cuid())
+  staffId    String
+  locationId String
+  weekday    Int // 0 = Sunday … 6 = Saturday
+  startMin   Int
+  endMin     Int
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, weekday])
+}
+
+/// One-off overrides. LEAVE/HOLIDAY remove availability for a local date,
+/// EXTRA_HOURS adds it. `date` is a local calendar date (YYYY-MM-DD).
+model ScheduleException {
+  id      String @id @default(cuid())
+  staffId String
+  date    String
+  kind    String // LEAVE | HOLIDAY | EXTRA_HOURS
+  startMin Int?
+  endMin   Int?
+  note     String?
+  staff   Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, date])
+}
+
+// ───────────────────────────── customers ─────────────────────────────
+
+model Customer {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  email     String
+  phone     String?
+  timezone  String   @default("UTC")
+  notes     String?
+  createdAt DateTime @default(now())
+
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  participants AppointmentParticipant[]
+  slotHolds    SlotHold[]
+
+  @@unique([orgId, email])
+  @@index([orgId])
+}
+
+// ───────────────────────────── scheduling ─────────────────────────────
+
+model Appointment {
+  id            String  @id @default(cuid())
+  orgId         String
+  locationId    String
+  serviceId     String
+  staffId       String
+  customerId    String
+  resourceId    String?
+
+  // All instants are stored UTC. status + local fields let the UI render the
+  // appointment exactly where it was booked, even if the org later changes tz.
+  startsAt      DateTime
+  endsAt        DateTime
+  blockStartsAt DateTime // startsAt - bufferBefore
+  blockEndsAt   DateTime // endsAt + bufferAfter
+  timezone      String
+  localDate     String // YYYY-MM-DD at booking time
+  localStartMin Int    // minutes from local midnight
+  localEndMin   Int
+
+  // PENDING_PAYMENT | CONFIRMED | COMPLETED | CANCELLED | NO_SHOW
+  status           String @default("PENDING_PAYMENT")
+  seats            Int    @default(1)
+  priceCents       Int
+  depositCents     Int    @default(0)
+  amountPaidCents  Int    @default(0)
+  currency         String @default("USD")
+  notes            String?
+  cancellationReason String?
+
+  createdByType String  @default("CUSTOMER") // CUSTOMER | STAFF | SYSTEM
+  createdById   String?
+  idempotencyKey String?
+  holdId        String?
+  confirmedAt   DateTime?
+  cancelledAt   DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id])
+  service      Service      @relation(fields: [serviceId], references: [id])
+  staff        Staff        @relation(fields: [staffId], references: [id])
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  resource     Resource?    @relation(fields: [resourceId], references: [id])
+
+  participants   AppointmentParticipant[]
+  payments       Payment[]
+  notifications  Notification[]
+  calendarEvents CalendarEventMapping[]
+  slotLocks      SlotLock[]
+
+  @@unique([orgId, idempotencyKey])
+  @@index([orgId, startsAt])
+  @@index([staffId, startsAt])
+  @@index([orgId, status])
+}
+
+/// Group-booking seats. Kept as a first-class join so a booking can hold N
+/// named attendees without duplicating the appointment row.
+model AppointmentParticipant {
+  id            String @id @default(cuid())
+  appointmentId String
+  customerId    String
+  status        String @default("CONFIRMED")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  customer    Customer    @relation(fields: [customerId], references: [id])
+
+  @@unique([appointmentId, customerId])
+}
+
+/// Temporary reservation created the moment a customer picks a slot. It exists
+/// so a checkout that takes 3 minutes doesn't lose the slot, and it expires on
+/// its own. A hold *always* owns a SlotLock row, so two browsers cannot hold
+/// the same staff/second.
+model SlotHold {
+  id            String   @id @default(cuid())
+  token         String   @unique
+  orgId         String
+  locationId    String
+  serviceId     String
+  staffId       String
+  customerId    String?
+  startsAt      DateTime
+  endsAt        DateTime
+  blockStartsAt DateTime
+  blockEndsAt   DateTime
+  expiresAt     DateTime
+  status     String   @default("ACTIVE") // ACTIVE | CONSUMED | EXPIRED | RELEASED
+  createdAt  DateTime @default(now())
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  location Location     @relation(fields: [locationId], references: [id])
+  service  Service      @relation(fields: [serviceId], references: [id])
+  staff    Staff        @relation(fields: [staffId], references: [id])
+  customer Customer?    @relation(fields: [customerId], references: [id])
+  locks    SlotLock[]
+
+  @@index([staffId, startsAt])
+  @@index([status, expiresAt])
+}
+
+/// THE double-booking guard.
+///
+/// A booking occupies real time, so we record one row per *15-minute tick* the
+/// booking covers, and (staffId, tickAt) is unique. That means the database —
+/// not the availability query, not the UI, not a "check then insert" race —
+/// decides who wins. Two overlapping requests always collide on at least one
+/// tick, even when their start times differ (09:00–10:00 vs 09:30–10:30).
+///
+/// Ticks are written inside the same transaction that creates the appointment,
+/// so a rollback cannot leak occupancy. On Postgres the same invariant is
+/// expressed as EXCLUDE USING gist (staffId WITH =, tstzrange(...) WITH &&).
+model SlotLock {
+  id            String   @id @default(cuid())
+  staffId       String
+  tickAt        DateTime
+  appointmentId String?
+  holdId        String?
+  createdAt     DateTime @default(now())
+
+  staff       Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  hold        SlotHold?    @relation(fields: [holdId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, tickAt])
+  @@index([appointmentId])
+  @@index([holdId])
+  @@index([tickAt])
+}
+
+// ───────────────────────────── money ─────────────────────────────
+
+model Payment {
+  id             String  @id @default(cuid())
+  orgId          String
+  appointmentId  String
+  provider       String  @default("mock") // mock | stripe
+  providerRef    String  @unique
+  amountCents    Int
+  currency       String
+  status         String  @default("REQUIRES_PAYMENT") // REQUIRES_PAYMENT | SUCCEEDED | FAILED | REFUNDED
+  idempotencyKey String  @unique
+  capturedAt     DateTime?
+  failedAt       DateTime?
+  createdAt      DateTime @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  appointment Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  refunds     Refund[]
+
+  @@index([orgId, status])
+}
+
+model Refund {
+  id          String   @id @default(cuid())
+  orgId       String
+  paymentId   String
+  amountCents Int
+  reason      String?
+  status      String   @default("SUCCEEDED")
+  providerRef String?
+  createdAt   DateTime @default(now())
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  payment Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// ───────────────────────────── integrations ─────────────────────────────
+
+model ExternalAccount {
+  id              String    @id @default(cuid())
+  orgId           String
+  userId          String
+  provider        String // GOOGLE_CALENDAR | MICROSOFT_GRAPH
+  accessTokenEnc  String
+  refreshTokenEnc String
+  scope           String    @default("")
+  expiresAt       DateTime
+  syncToken       String?
+  connectedAt     DateTime  @default(now())
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, provider, userId])
+}
+
+model CalendarEventMapping {
+  id            String   @id @default(cuid())
+  appointmentId String
+  provider      String
+  externalEventId String
+  etag          String?
+  state         String   @default("SYNCED") // SYNCED | PENDING | FAILED | DELETED
+  lastSyncedAt  DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, provider])
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  orgId         String
+  appointmentId String?
+  channel       String // EMAIL | SMS
+  template      String // BOOKING_CONFIRMED | REMINDER_24H | CANCELLED | STAFF_ALERT
+  recipient     String
+  payload       String   @default("{}")
+  status        String   @default("QUEUED") // QUEUED | SENT | FAILED | DEAD_LETTER
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(5)
+  sendAt        DateTime @default(now())
+  sentAt        DateTime?
+  lastError     String?
+  /// Deterministic key so a retried job (or a duplicate webhook) cannot send the
+  /// same reminder twice.
+  dedupeKey     String   @unique
+  createdAt     DateTime @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([status, sendAt])
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String
+  externalId  String
+  type        String
+  payload     String
+  status      String   @default("RECEIVED") // RECEIVED | PROCESSED | SKIPPED | FAILED
+  attempts    Int      @default(0)
+  error       String?
+  orgId       String?
+  receivedAt  DateTime @default(now())
+  processedAt DateTime?
+
+  org Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  actorType  String // USER | CUSTOMER | SYSTEM | WEBHOOK
+  actorId    String?
+  action     String // appointment.created, appointment.cancelled, payment.succeeded, …
+  entityType String
+  entityId   String
+  metadata   String   @default("{}")
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ───────────────────────────── jobs ─────────────────────────────
+
+/// Durable work queue. Same contract as BullMQ (attempts, delay, backoff,
+/// dead-letter, atomic claim) but persisted in the primary database so the
+/// demo has no Redis dependency. See docs/adr/0003-job-queue.md.
+model Job {
+  id          String   @id @default(cuid())
+  type        String // notification.send, calendar.sync, hold.expire, reminder.scan
+  payload     String   @default("{}")
+  status      String   @default("QUEUED") // QUEUED | RUNNING | DONE | FAILED | DEAD_LETTER
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  runAt       DateTime @default(now())
+  lockedAt    DateTime?
+  lockToken   String?
+  lastError   String?
+  orgId       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+}

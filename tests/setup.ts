@@ -1,0 +1,5 @@
+process.env.DATABASE_URL = 'file:./test.db?connection_limit=1'
+process.env.SESSION_SECRET = 'test-session-secret-at-least-24-chars-long'
+process.env.MOCK_WEBHOOK_SECRET = 'whsec_test_secret'
+process.env.NOTIFY_TRANSPORT = 'console'
+process.env.APP_URL = 'http://localhost:3000'
